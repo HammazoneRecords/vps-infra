@@ -1,0 +1,222 @@
+version: "3.9"
+
+# MW_CENTRAL — Full VPS Stack
+# All services on internal network. Only nginx exposes 80/443.
+# Secrets via .env file — never commit .env
+# Deploy: git clone each app repo, set .env, docker-compose up -d
+
+networks:
+  mw-net:
+    driver: bridge
+
+volumes:
+  timecheck_db:
+  solob_data:
+  certbot_certs:
+  certbot_www:
+  zitadel_zitadel-db-data:
+    external: true   # already exists from Love Ref setup
+  ollama_models:
+
+services:
+
+  # ── Nginx (reverse proxy + static file server) ──────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: mw-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - certbot_certs:/etc/letsencrypt:ro
+      - certbot_www:/var/www/certbot:ro
+      - melissa_dist:/var/www/melissa:ro
+    networks:
+      - mw-net
+    depends_on:
+      - timecheck
+      - solob
+      - mindwaveja
+      - marcus
+
+  # ── Certbot (SSL cert management) ───────────────────────────────────────────
+  certbot:
+    image: certbot/certbot
+    container_name: mw-certbot
+    volumes:
+      - certbot_certs:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    # Manual run: docker-compose run certbot certonly --webroot -w /var/www/certbot \
+    #   -d domain.com --email ovandobrown@gmail.com --agree-tos
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew; sleep 12h & wait $${!}; done;'"
+
+  # ── PostgreSQL (Time-Check database) ────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    container_name: mw-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: timecheck
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: timecheck
+    volumes:
+      - timecheck_db:/var/lib/postgresql/data
+    networks:
+      - mw-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U timecheck"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Time-Check App ───────────────────────────────────────────────────────────
+  timecheck:
+    build:
+      context: ./timecheck
+      dockerfile: Dockerfile
+    container_name: mw-timecheck
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 5001
+      DATABASE_URL: postgresql://timecheck:${POSTGRES_PASSWORD}@postgres:5432/timecheck
+      SESSION_SECRET: ${SESSION_SECRET}
+      VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY}
+      VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY}
+      VAPID_EMAIL: ${VAPID_EMAIL}
+    networks:
+      - mw-net
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Solobility Portal ────────────────────────────────────────────────────────
+  solob:
+    build:
+      context: ./solob-portal
+      dockerfile: Dockerfile
+    container_name: mw-solob
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+    volumes:
+      - solob_data:/app/data
+    networks:
+      - mw-net
+
+  # ── MindWave JA ──────────────────────────────────────────────────────────────
+  mindwaveja:
+    build:
+      context: ./mindwaveja
+      dockerfile: Dockerfile
+    container_name: mw-mindwaveja
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+    networks:
+      - mw-net
+
+  # ── Marcus Garvey API ────────────────────────────────────────────────────────
+  marcus:
+    build:
+      context: ./marcus-app
+      dockerfile: Dockerfile
+    container_name: mw-marcus
+    restart: unless-stopped
+    environment:
+      FLASK_DEBUG: "false"
+      OLLAMA_HOST: http://ollama:11434
+    volumes:
+      - ./marcus-app/backend/data:/app/data
+    networks:
+      - mw-net
+    depends_on:
+      - ollama
+
+  # ── Ollama (LLM backend for Marcus) ─────────────────────────────────────────
+  ollama:
+    image: ollama/ollama
+    container_name: mw-ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_models:/root/.ollama
+    networks:
+      - mw-net
+
+  # ── Melissa Relief Index (static builder) ───────────────────────────────────
+  melissa:
+    build:
+      context: ./melissa
+      dockerfile: Dockerfile
+    container_name: mw-melissa
+    volumes:
+      - melissa_dist:/app/dist
+    # One-shot: builds the static files into the shared volume, then exits.
+    # Nginx reads from melissa_dist volume.
+
+  # ── Zitadel (Auth — Love Ref) ────────────────────────────────────────────────
+  zitadel:
+    image: ghcr.io/zitadel/zitadel:v3.4.9
+    container_name: zitadel
+    restart: unless-stopped
+    command: start-from-init --masterkey ${ZITADEL_MASTERKEY} --tlsMode disabled
+    environment:
+      ZITADEL_DATABASE_POSTGRES_HOST: zitadel-db
+      ZITADEL_DATABASE_POSTGRES_PORT: 5432
+      ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: ${ZITADEL_DB_PASSWORD}
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+      ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: postgres
+      ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: ${ZITADEL_DB_PASSWORD}
+      ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
+      ZITADEL_EXTERNALDOMAIN: auth.mindwaveja.com
+      ZITADEL_EXTERNALPORT: 443
+      ZITADEL_EXTERNALSECURE: "true"
+    networks:
+      - mw-net
+    depends_on:
+      - zitadel-db
+
+  # ── Zitadel Postgres ─────────────────────────────────────────────────────────
+  zitadel-db:
+    image: postgres:16-alpine
+    container_name: zitadel-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: zitadel
+      POSTGRES_PASSWORD: ${ZITADEL_DB_PASSWORD}
+      POSTGRES_DB: zitadel
+    volumes:
+      - zitadel_zitadel-db-data:/var/lib/postgresql/data
+    networks:
+      - mw-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U zitadel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Matrix Conduit (Love Ref) ────────────────────────────────────────────────
+  conduit:
+    image: matrixconduit/matrix-conduit:latest
+    container_name: conduit
+    restart: unless-stopped
+    ports:
+      - "8008:8008"
+    networks:
+      - mw-net
+
+volumes:
+  timecheck_db:
+  solob_data:
+  certbot_certs:
+  certbot_www:
+  ollama_models:
+  melissa_dist:
+  zitadel_zitadel-db-data:
+    external: true
