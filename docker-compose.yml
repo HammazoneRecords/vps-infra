@@ -102,6 +102,7 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3000
+      DB_PATH: /app/data/solobility.db
     volumes:
       - solob_data:/app/data
     networks:
