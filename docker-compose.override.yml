@@ -1,0 +1,36 @@
+# docker-compose.override.yml
+# VPS transition mode — system nginx on 80/443, apps expose host ports directly.
+# Docker Compose merges this automatically with docker-compose.yml.
+# Remove this file when switching to Docker nginx as the reverse proxy.
+
+version: "3.9"
+
+services:
+  timecheck:
+    ports:
+      - "5001:5001"
+
+  solob:
+    ports:
+      - "3000:3000"
+
+  mindwaveja:
+    ports:
+      - "3001:3001"
+
+  marcus:
+    ports:
+      - "5050:5050"
+
+  earn:
+    ports:
+      - "3003:3003"
+
+  # nginx and certbot disabled — system nginx handles 80/443
+  nginx:
+    profiles:
+      - docker-nginx-only
+
+  certbot:
+    profiles:
+      - docker-nginx-only

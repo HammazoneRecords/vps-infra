@@ -157,15 +157,15 @@ services:
     container_name: mw-earn-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: earn
+      POSTGRES_USER: earn_mw
       POSTGRES_PASSWORD: ${EARN_DB_PASSWORD}
-      POSTGRES_DB: earn
+      POSTGRES_DB: earn_mw
     volumes:
       - earn_db:/var/lib/postgresql/data
     networks:
       - mw-net
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U earn"]
+      test: ["CMD-SHELL", "pg_isready -U earn_mw"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -180,8 +180,8 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3003
-      DATABASE_URL: postgresql://earn:${EARN_DB_PASSWORD}@earn-postgres:5432/earn
-      IRON_SESSION_SECRET: ${EARN_SESSION_SECRET}
+      DATABASE_URL: postgresql://earn_mw:${EARN_DB_PASSWORD}@earn-postgres:5432/earn_mw
+      SESSION_SECRET: ${EARN_SESSION_SECRET}
       RESEND_API_KEY: ${EARN_RESEND_API_KEY}
     networks:
       - mw-net
