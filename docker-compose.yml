@@ -9,15 +9,6 @@ networks:
   mw-net:
     driver: bridge
 
-volumes:
-  timecheck_db:
-  solob_data:
-  certbot_certs:
-  certbot_www:
-  zitadel_zitadel-db-data:
-    external: true   # already exists from Love Ref setup
-  ollama_models:
-
 services:
 
   # ── Nginx (reverse proxy + static file server) ──────────────────────────────
@@ -40,6 +31,7 @@ services:
       - solob
       - mindwaveja
       - marcus
+      - earn
 
   # ── Certbot (SSL cert management) ───────────────────────────────────────────
   certbot:
@@ -159,6 +151,44 @@ services:
     # One-shot: builds the static files into the shared volume, then exits.
     # Nginx reads from melissa_dist volume.
 
+  # ── Earn MindWave JA (PostgreSQL) ───────────────────────────────────────────
+  earn-postgres:
+    image: postgres:16-alpine
+    container_name: mw-earn-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: earn
+      POSTGRES_PASSWORD: ${EARN_DB_PASSWORD}
+      POSTGRES_DB: earn
+    volumes:
+      - earn_db:/var/lib/postgresql/data
+    networks:
+      - mw-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U earn"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Earn MindWave JA (Next.js) ───────────────────────────────────────────────
+  earn:
+    build:
+      context: ./earn-mindwaveja
+      dockerfile: Dockerfile
+    container_name: mw-earn
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: 3003
+      DATABASE_URL: postgresql://earn:${EARN_DB_PASSWORD}@earn-postgres:5432/earn
+      IRON_SESSION_SECRET: ${EARN_SESSION_SECRET}
+      RESEND_API_KEY: ${EARN_RESEND_API_KEY}
+    networks:
+      - mw-net
+    depends_on:
+      earn-postgres:
+        condition: service_healthy
+
   # ── Zitadel (Auth — Love Ref) ────────────────────────────────────────────────
   zitadel:
     image: ghcr.io/zitadel/zitadel:v3.4.9
@@ -219,5 +249,6 @@ volumes:
   certbot_www:
   ollama_models:
   melissa_dist:
+  earn_db:
   zitadel_zitadel-db-data:
     external: true

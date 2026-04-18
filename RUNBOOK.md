@@ -42,6 +42,8 @@ cp -r mindwaveja-repo/website ./mindwaveja
 
 git clone https://github.com/HammazoneRecords/MarcusGarvey-App-WWMD.git marcus-app
 git clone https://github.com/HammazoneRecords/melissa_relief_index.git melissa
+git clone https://github.com/HammazoneRecords/earn-mindwaveja.git earn-mindwaveja-repo
+cp -r earn-mindwaveja-repo/app ./earn-mindwaveja
 
 # Clone this infra repo
 git clone https://github.com/HammazoneRecords/vps-infra.git .
@@ -133,6 +135,10 @@ docker-compose run --rm certbot certonly --webroot -w /var/www/certbot \
   --email ovandobrown@gmail.com --agree-tos --no-eff-email
 
 docker-compose run --rm certbot certonly --webroot -w /var/www/certbot \
+  -d earn.mindwaveja.com \
+  --email ovandobrown@gmail.com --agree-tos --no-eff-email
+
+docker-compose run --rm certbot certonly --webroot -w /var/www/certbot \
   -d auth.mindwaveja.com \
   --email ovandobrown@gmail.com --agree-tos --no-eff-email
 
@@ -154,6 +160,7 @@ curl -s -o /dev/null -w "%{http_code}" https://mindwaveja.com
 curl -s -o /dev/null -w "%{http_code}" https://timecheck.mindwaveja.com/api/auth/user
 curl -s -o /dev/null -w "%{http_code}" https://mri.mindwaveja.com
 curl -s -o /dev/null -w "%{http_code}" https://marcusgarvey876.com
+curl -s -o /dev/null -w "%{http_code}" https://earn.mindwaveja.com
 curl -s -o /dev/null -w "%{http_code}" https://auth.mindwaveja.com
 ```
 
